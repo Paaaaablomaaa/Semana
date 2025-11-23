@@ -45,7 +45,15 @@ export const generateSchedule = async (userPrompt: string): Promise<AIPlanRespon
     });
 
     if (response.text) {
-      return JSON.parse(response.text) as AIPlanResponse;
+      // Limpieza robusta: eliminar bloques de código markdown si la IA los incluye
+      let cleanText = response.text.trim();
+      if (cleanText.startsWith("```json")) {
+        cleanText = cleanText.replace(/^```json/, "").replace(/```$/, "");
+      } else if (cleanText.startsWith("```")) {
+        cleanText = cleanText.replace(/^```/, "").replace(/```$/, "");
+      }
+      
+      return JSON.parse(cleanText) as AIPlanResponse;
     }
     return null;
   } catch (error) {

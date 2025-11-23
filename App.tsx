@@ -73,8 +73,11 @@ const getStartOfWeek = (date: Date) => {
 
 const getWeekId = (date: Date) => {
   const d = getStartOfWeek(date);
-  // Return YYYY-MM-DD to ensure locale independence for ID
-  return d.toLocaleDateString('sv-SE'); // ISO format YYYY-MM-DD
+  // Manual formatting to ensure browser compatibility (Safari/Chrome/Firefox consistency)
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const getWeekRangeString = (date: Date) => {
@@ -633,12 +636,13 @@ const StatsDetailModal: React.FC<{
     const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
     const dailyData = useMemo(() => {
-        return DAYS_ORDER.map(day => {
+        return DAYS_ORDER.map((day, index) => {
             const minutes = tasks
                 .filter(t => t.day === day && (t.weekId === viewedWeekId || (!t.weekId && viewedWeekId === currentRealWeekId)))
                 .reduce((acc, t) => acc + (t.durationMinutes || 0), 0);
             
             return {
+                id: index,
                 name: day.substring(0, 2), 
                 minutes: minutes,
                 label: day.substring(0, 3),
@@ -664,7 +668,11 @@ const StatsDetailModal: React.FC<{
             const sunday = new Date(monday);
             sunday.setDate(sunday.getDate() + 6);
             
-            const weekId = monday.toLocaleDateString('sv-SE');
+            // Replicate manual formatting from getWeekId
+            const y = monday.getFullYear();
+            const m = String(monday.getMonth() + 1).padStart(2, '0');
+            const d = String(monday.getDate()).padStart(2, '0');
+            const weekId = `${y}-${m}-${d}`;
             
             const startDay = monday.getDate();
             const endDay = sunday.getDate();
@@ -919,7 +927,7 @@ const TaskBubble: React.FC<{
                   container: 'bg-gradient-to-br from-[#7c2d12] to-[#451a03] border-t border-orange-500/30 rounded-xl shadow-md hover:translate-y-[-2px]',
                   text: 'text-orange-50 font-medium',
                   delete: 'text-orange-300/50 hover:text-white'
-               };
+              };
           case 'classic':
               if (isPersonal) return { container: 'bg-[#ffe4e6] border-[#fda4af] rounded-2xl', text: 'text-rose-900', delete: 'text-rose-300' };
               return { container: 'bg-black border-white/10 rounded-2xl', text: 'text-white', delete: 'text-white/50 hover:text-white' };
@@ -1258,6 +1266,7 @@ const AddTaskModal: React.FC<{
                         min="0"
                         value={hours}
                         onChange={e => setHours(Math.max(0, Number(e.target.value)))}
+                        onWheel={(e) => e.currentTarget.blur()}
                         className={`w-full p-6 ${styles.input} border rounded-xl outline-none text-5xl font-black text-center transition-all`}
                         />
                         <span className={`absolute right-4 bottom-3 text-[10px] font-bold tracking-widest opacity-50 ${styles.text}`}>HRS</span>
@@ -1273,6 +1282,7 @@ const AddTaskModal: React.FC<{
                         step="5"
                         value={minutes}
                         onChange={e => setMinutes(Math.max(0, Number(e.target.value)))}
+                        onWheel={(e) => e.currentTarget.blur()}
                         className={`w-full p-6 ${styles.input} border rounded-xl outline-none text-5xl font-black text-center transition-all`}
                         />
                         <span className={`absolute right-4 bottom-3 text-[10px] font-bold tracking-widest opacity-50 ${styles.text}`}>MIN</span>
@@ -1316,9 +1326,15 @@ const TopicNoteModal: React.FC<{
   const [note, setNote] = useState(initialNote);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Update internal state if initialNote prop changes (e.g. switching topics without closing)
   useEffect(() => {
+    setNote(initialNote);
+  }, [initialNote]);
+
+  useEffect(() => {
+    if (!isOpen) return; // Prevent unnecessary saves when closed
     const timer = setTimeout(() => {
-      if (isOpen && note !== initialNote) {
+      if (note !== initialNote) {
         setIsSaving(true);
         onSave(note);
         setTimeout(() => setIsSaving(false), 500);
@@ -1330,7 +1346,10 @@ const TopicNoteModal: React.FC<{
   if (!isOpen) return null;
 
   const handleClose = () => {
-    onSave(note);
+    // Force save on close to ensure no data loss
+    if (note !== initialNote) {
+        onSave(note);
+    }
     onClose();
   };
 
@@ -1639,7 +1658,8 @@ function App() {
        id: uuidv4(),
        title: t.title,
        description: t.description,
-       day: Object.values(DayOfWeek).find(d => d === t.day) || DayOfWeek.Monday,
+       // Robust day matching (case insensitive)
+       day: Object.values(DayOfWeek).find(d => d.toLowerCase() === t.day.toLowerCase().trim()) || DayOfWeek.Monday,
        startTime: t.startTime,
        durationMinutes: t.durationMinutes,
        color: t.category,
@@ -1878,9 +1898,21 @@ function App() {
                         return (
                           <div 
                             key={topic.id} 
-                            className={`flex items-center gap-2 p-3 border ${ts.columnBg} ${theme === 'minimal' ? 'border-zinc-200' : 'border-white/5'} cursor-default`}
+                            draggable={true}
+                            onDragStart={() => handleDragStart(masterIndex)}
+                            onDragOver={handleDragOver}
+                            onDrop={() => handleDrop(masterIndex)}
+                            className={`flex items-center gap-2 p-3 border ${ts.columnBg} ${theme === 'minimal' ? 'border-zinc-200' : 'border-white/5'} cursor-move`}
                           >
+                            <GripVertical className="w-4 h-4 text-slate-500 cursor-move" />
                             <input type="text" value={topic.title} onChange={(e) => handleUpdateTopic(topic.id, e.target.value)} className={`flex-1 bg-transparent border-b outline-none px-2 py-1 text-sm font-mono ${ts.textMain} ${theme === 'minimal' ? 'border-zinc-300' : 'border-white/10'}`} />
+                            
+                            {/* Mobile reorder controls */}
+                            <div className="flex flex-col gap-0.5 md:hidden">
+                                <button onClick={() => handleMoveTopic(masterIndex, 'up')} className="p-1 hover:bg-white/10 rounded"><ArrowUp className="w-3 h-3 opacity-50" /></button>
+                                <button onClick={() => handleMoveTopic(masterIndex, 'down')} className="p-1 hover:bg-white/10 rounded"><ArrowDown className="w-3 h-3 opacity-50" /></button>
+                            </div>
+
                             <button onClick={() => handleDeleteTopic(topic.id)} className="p-2 hover:bg-red-900/20 rounded text-slate-500 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         );
@@ -2003,7 +2035,7 @@ function App() {
           </div>
           
           <div className={`absolute bottom-6 text-[10px] font-mono ${ts.textMuted} relative z-10`}>
-            SYSTEM STATUS: ONLINE • V.2.6.0
+            SYSTEM STATUS: ONLINE • V.2.6.1
           </div>
         </div>
       )}
